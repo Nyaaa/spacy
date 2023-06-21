@@ -4,7 +4,8 @@ import timer
 import ru_core_news_sm
 from spacy.lang.ru import stop_words
 from spacy.matcher import Matcher
-from spacy.tokens import Span
+from nltk import tokenize
+from textblob import TextBlob
 
 
 nlp = ru_core_news_sm.load()
@@ -22,37 +23,62 @@ def control():
 
 
 @timer.wrapper
+def textblob():
+    for line in load_sample():
+        text = TextBlob(line.xpath("string(.)").get())
+        yield text.sentences
+
+
+@timer.wrapper
 def nlp_parser():
     for line in load_sample():
         text = line.xpath("string(.)").get()
         doc = nlp(text)
         for sent in doc.sents:
-            tokens = [token for token in sent if token not in spacy_stopwords]
-            has_dates(sent)
-            yield tokens
+            # tokens = [token.lemma_ for token in sent if token not in spacy_stopwords]
+            # print(tokens)
+            find_matches(sent)
+            yield sent
 
 
-def print_matches(matcher, doc, i, matches):
-    # Get the current match and create tuple of entity label, start and end.
-    # Append entity to the doc's entity. (Don't overwrite doc.ents!)
+def print_matches_sent(matcher, doc, i, matches):
     match_id, start, end = matches[i]
-    entity = Span(doc, start, end, label="EVENT")
-    doc.ents += (entity,)
-    print(nlp.vocab.strings[match_id], doc)
+    string_id = nlp.vocab.strings[match_id]
+    span = doc[start:end]
+    sents = span.sent
+    print(string_id, sents)
 
 
-def has_dates(sent):
-    patterns = [
-        [{"TEXT": {"REGEX": "состо[ия]тся"}}],
-        [{"LOWER": "открытие"}],
-        [{"LOWER": "проведен"}],
-        [{"LOWER": "дата"}],
-        [{"LOWER": "пройд"}],
-        [{"TEXT": {"REGEX": "про[хв]од"}}],
+def print_matches_match(matcher, doc, i, matches):
+    match_id, start, end = matches[i]
+    string_id = nlp.vocab.strings[match_id]
+    span = doc[start:end]
+    print(string_id, span)
+
+
+def find_matches(sent):
+    conf_date_patterns = [
+        [{"LEMMA": "состояться"}],
+        [{"LEMMA": "открыться"}],
+        [{"LEMMA": "открываться"}],
+        [{"LEMMA": "пройти"}],
+        [{"LEMMA": "дата"}],
+        [{"LEMMA": "провести"}],
     ]
-    matcher.add("conf_date", patterns, on_match=print_matches)
+    reg_date_patterns = [
+        [{"LEMMA": "заявка"}],
+        [{"LEMMA": "приниматься"}],
+        [{"LEMMA": "участиe"}],
+        [{"LEMMA": "регистрация"}],
+    ]
+    email_patterns = [[{"LIKE_EMAIL": True}]]
+
+    matcher.add("reg_date", reg_date_patterns, on_match=print_matches_sent)
+    matcher.add("conf_date", conf_date_patterns, on_match=print_matches_sent)
+    matcher.add("email", email_patterns, on_match=print_matches_match)
     matcher(sent)
 
 
-print(list(control()))
+# print(list(control()))
 print(list(nlp_parser()))
+# print(list(textblob()))
